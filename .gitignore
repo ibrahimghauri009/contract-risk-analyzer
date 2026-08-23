@@ -16,6 +16,8 @@ data/raw/*
 data/processed/*
 !data/processed/.gitkeep
 data/chroma_db/
+data/eval_chroma/
+data/uploads/
 *.parquet
 *.csv
 *.jsonl
