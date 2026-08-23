@@ -1,0 +1,52 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Data and large files (keep raw dataset out of git, provide download script)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/chroma_db/
+*.parquet
+*.csv
+*.jsonl
+
+# Models and checkpoints
+models/*.joblib
+models/*.pkl
+models/*.pt
+models/*.onnx
+!models/.gitkeep
+
+# Environment variables
+.env
+.env.local
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build / Distribution
+build/
+dist/
+*.egg-info/
