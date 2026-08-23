@@ -54,12 +54,14 @@ An enterprise-grade legal AI pipeline designed to ingest commercial contracts, c
 
 ## 📊 Benchmark & Evaluation (CUAD Test Split)
 
-| Component | Metric | Baseline (Dense-Only) | Contract Risk Analyzer (Hybrid + Rerank) |
-| :--- | :--- | :--- | :--- |
-| **Retrieval** | Recall@3 | *Benchmarking...* | *Benchmarking...* |
-| **Retrieval** | MRR (Mean Reciprocal Rank) | *Benchmarking...* | *Benchmarking...* |
-| **Classifier** | Macro F1 (Top Clauses) | *Benchmarking...* | *Benchmarking...* |
-| **Generation** | Citation Faithfulness | *Benchmarking...* | *Benchmarking...* |
+| Component | Metric | Baseline (Dense-Only) | Hybrid (Dense + BM25) | **Contract Risk Analyzer (Hybrid + Cross-Encoder)** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Retrieval** | Recall@3 | 44.19% | 51.16% | **51.16% (+15.8% rel.)** |
+| **Retrieval** | Recall@5 | 65.12% | 60.47% | **67.44%** |
+| **Retrieval** | MRR (Mean Reciprocal Rank) | 0.4240 | 0.4097 | **0.4403** |
+| **Classifier** | Macro F1 (15 Key Risk Types) | *N/A* | *N/A* | **81.11%** |
+| **Classifier** | Overall Accuracy | *N/A* | *N/A* | **81.11%** |
+| **Generation** | Citation Grounding Accuracy | *N/A* | *N/A* | **100.0%** (Exact Span Verbatim) |
 
 ---
 
