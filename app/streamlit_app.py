@@ -7,10 +7,17 @@ Features:
 - Grounded Clause-level Q&A with Cross-Encoder Reranking
 - Live Benchmark Metrics
 """
-import streamlit as st
-import pandas as pd
+import sys
 import json
 from pathlib import Path
+
+# Ensure project root is in sys.path so 'src' can be imported when run from any directory
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import streamlit as st
+import pandas as pd
 from src.config import settings
 from src.ingest import ContractIngestion
 from src.indexing import HybridIndexManager
