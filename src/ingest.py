@@ -1,7 +1,7 @@
 """Legal Contract Ingestion and Structure-Aware Chunking.
 
 Handles:
-- PDF and Text document ingestion
+- PDF and Text document ingestion with line normalization
 - Section and clause-aware segmentation
 - Exact character offset tracking for verifiable citations
 """
@@ -28,7 +28,7 @@ class ContractChunk:
 class ContractIngestion:
     """Ingests raw contract documents (PDF or TXT) and segments them into coherent clause units."""
 
-    # Regex patterns for legal section headers (e.g., "Section 1.2", "ARTICLE IV", "1. Definitions")
+    # Regex patterns for legal section headers (e.g., "Section 1.2", "ARTICLE IV", "1. Definitions", "1.1 Termination")
     SECTION_PATTERN = re.compile(
         r"(?i)^(?:section|article|clause)?\s*(\d+(?:\.\d+)*|[IVXLCDM]+)[\.\:\s\-]+([A-Z][^\n]+)?",
         re.MULTILINE
@@ -62,33 +62,56 @@ class ContractIngestion:
 
         for idx, page in enumerate(reader.pages):
             page_text = page.extract_text() or ""
+            # Clean weird PDF line breaks while keeping paragraph breaks
+            cleaned_page = self._clean_pdf_text(page_text)
             start = current_offset
-            end = start + len(page_text)
-            full_text_parts.append(page_text)
+            end = start + len(cleaned_page)
+            full_text_parts.append(cleaned_page)
             page_maps.append({
                 "page": idx + 1,
                 "start_char": start,
                 "end_char": end
             })
-            current_offset = end + 1  # newline separator
+            current_offset = end + 2  # double newline separator
 
-        return "\n".join(full_text_parts), page_maps
+        return "\n\n".join(full_text_parts), page_maps
+
+    def _clean_pdf_text(self, text: str) -> str:
+        """Fixes hyphenated line-breaks and joins broken lines inside paragraphs."""
+        # Fix hyphenated words broken across lines (e.g. "agree-\nment" -> "agreement")
+        text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", text)
+        # Normalize multiple newlines
+        text = re.sub(r"\r\n|\r", "\n", text)
+        # If line ends without period/colon and next line starts with lowercase, join them
+        text = re.sub(r"(?<![\.\:\;\?\!])\n(?=[a-z])", " ", text)
+        return text
 
     def chunk_contract(
         self,
         text: str,
         contract_id: str,
         page_maps: Optional[List[Dict[str, Any]]] = None,
-        max_chunk_chars: int = 1200,
-        min_chunk_chars: int = 80
+        max_chunk_chars: int = 800,
+        min_chunk_chars: int = 60
     ) -> List[ContractChunk]:
         """
         Chunks text respecting legal paragraphs and section boundaries
         while maintaining exact start and end offsets.
         """
-        # Split by double newlines (paragraphs) first
-        raw_paragraphs = [p for p in re.split(r"\n\s*\n+", text) if p.strip()]
+        if not text.strip():
+            return []
+
+        # Split on paragraph breaks or section headers
+        # Split by double newlines or single newlines followed by numbers/sections
+        raw_sections = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip()]
         
+        # If text doesn't have double newlines, split by line or section
+        if len(raw_sections) <= 2 and len(text) > 600:
+            raw_sections = [s.strip() for s in re.split(r"(?=\n\s*(?:(?:Section|Article|Clause|\d+\.|\d+\.\d+)\s+))", text) if s.strip()]
+            if len(raw_sections) <= 1:
+                # Fallback to splitting by sentence groups
+                raw_sections = [s.strip() for s in re.split(r"(?<=\.)\s+(?=[A-Z0-9])", text) if s.strip()]
+
         chunks: List[ContractChunk] = []
         current_offset = 0
         chunk_idx = 0
@@ -96,20 +119,19 @@ class ContractIngestion:
         current_section_num = None
         current_section_title = None
 
-        for para in raw_paragraphs:
-            para_clean = para.strip()
-            if not para_clean:
+        for section_text in raw_sections:
+            if not section_text:
                 continue
 
-            # Find actual start index of this paragraph in original text
-            start_pos = text.find(para_clean, current_offset)
+            # Find actual start index of this section in original text
+            start_pos = text.find(section_text, current_offset)
             if start_pos == -1:
                 start_pos = current_offset
-            end_pos = start_pos + len(para_clean)
+            end_pos = start_pos + len(section_text)
             current_offset = end_pos
 
-            # Check if this paragraph starts with a Section header
-            header_match = self.SECTION_PATTERN.match(para_clean)
+            # Check if this section starts with a Section header
+            header_match = self.SECTION_PATTERN.match(section_text)
             if header_match:
                 current_section_num = header_match.group(1)
                 current_section_title = header_match.group(2).strip() if header_match.group(2) else None
@@ -122,19 +144,19 @@ class ContractIngestion:
                         page_num = pm["page"]
                         break
 
-            # If paragraph is very long, split into sub-sentences while preserving offsets
-            if len(para_clean) > max_chunk_chars:
+            # If section is very long, split into sub-chunks on sentence boundaries
+            if len(section_text) > max_chunk_chars:
                 sub_chunks = self._split_long_paragraph(
-                    para_clean, start_pos, contract_id, chunk_idx,
+                    section_text, start_pos, contract_id, chunk_idx,
                     current_section_num, current_section_title, page_num, max_chunk_chars
                 )
                 chunks.extend(sub_chunks)
                 chunk_idx += len(sub_chunks)
-            elif len(para_clean) >= min_chunk_chars:
+            elif len(section_text) >= min_chunk_chars:
                 chunk = ContractChunk(
                     chunk_id=f"{contract_id}_chunk_{chunk_idx:04d}",
                     contract_id=contract_id,
-                    text=para_clean,
+                    text=section_text,
                     start_char=start_pos,
                     end_char=end_pos,
                     section_number=current_section_num,
@@ -143,6 +165,17 @@ class ContractIngestion:
                 )
                 chunks.append(chunk)
                 chunk_idx += 1
+
+        # Fallback if no chunks met min_chunk_chars
+        if not chunks and text.strip():
+            chunks.append(ContractChunk(
+                chunk_id=f"{contract_id}_chunk_0000",
+                contract_id=contract_id,
+                text=text.strip(),
+                start_char=0,
+                end_char=len(text.strip()),
+                page_number=1
+            ))
 
         return chunks
 
@@ -158,7 +191,7 @@ class ContractIngestion:
         max_chars: int
     ) -> List[ContractChunk]:
         """Splits an oversized paragraph on sentence boundaries while preserving offsets."""
-        sentences = re.split(r"(?<=[.\?!;])\s+", para_text)
+        sentences = [s.strip() for s in re.split(r"(?<=[.\?!;])\s+", para_text) if s.strip()]
         sub_chunks = []
         curr_text = ""
         curr_start = base_offset

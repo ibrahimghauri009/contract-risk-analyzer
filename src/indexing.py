@@ -3,6 +3,7 @@
 Combines:
 - ChromaDB for Dense Vector Embeddings (BGE-small / MiniLM)
 - BM25 for Sparse Keyword Matching
+- Per-contract isolation and active session management
 """
 import re
 import pickle
@@ -10,7 +11,6 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import chromadb
-from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
 from rank_bm25 import BM25Okapi
 from src.config import settings
@@ -48,20 +48,41 @@ class HybridIndexManager:
         logger.info(f"Loading embedding model: {self.embedding_model_name}")
         self.embedder = SentenceTransformer(self.embedding_model_name)
 
-        # Sparse BM25 state
+        # Global Sparse BM25 state
         self.bm25: Optional[BM25Okapi] = None
         self.chunk_store: Dict[str, ContractChunk] = {}
         self.bm25_chunk_ids: List[str] = []
+        
+        # Active contract isolated cache
+        self.active_contract_id: Optional[str] = None
+        self.active_chunks: List[ContractChunk] = []
+        self.active_bm25: Optional[BM25Okapi] = None
+
         self._load_bm25_index()
+
+    def set_active_contract(self, chunks: List[ContractChunk], contract_id: str):
+        """Builds an isolated in-memory index for the current active contract."""
+        self.active_contract_id = contract_id
+        self.active_chunks = chunks
+        
+        # Build contract-specific chunk store
+        for c in chunks:
+            self.chunk_store[c.chunk_id] = c
+            
+        corpus_tokens = [tokenize_for_bm25(c.text) for c in chunks]
+        if corpus_tokens:
+            self.active_bm25 = BM25Okapi(corpus_tokens)
 
     def index_chunks(self, chunks: List[ContractChunk], contract_id: Optional[str] = None) -> int:
         """Indexes a list of ContractChunk items into ChromaDB and BM25."""
         if not chunks:
             return 0
 
-        logger.info(f"Indexing {len(chunks)} chunks into ChromaDB and BM25...")
+        target_contract_id = contract_id or chunks[0].contract_id
+        self.set_active_contract(chunks, target_contract_id)
+
+        logger.info(f"Indexing {len(chunks)} chunks for contract '{target_contract_id}'...")
         
-        # Prepare data for ChromaDB
         ids = [c.chunk_id for c in chunks]
         texts = [c.text for c in chunks]
         metadatas = [
@@ -87,17 +108,16 @@ class HybridIndexManager:
             metadatas=metadatas
         )
 
-        # Update in-memory and persisted BM25 index
+        # Update global BM25
         for c in chunks:
-            self.chunk_store[c.chunk_id] = c
             if c.chunk_id not in self.bm25_chunk_ids:
                 self.bm25_chunk_ids.append(c.chunk_id)
 
-        corpus_tokens = [tokenize_for_bm25(self.chunk_store[cid].text) for cid in self.bm25_chunk_ids]
-        self.bm25 = BM25Okapi(corpus_tokens)
-        self._save_bm25_index()
+        corpus_tokens = [tokenize_for_bm25(self.chunk_store[cid].text) for cid in self.bm25_chunk_ids if cid in self.chunk_store]
+        if corpus_tokens:
+            self.bm25 = BM25Okapi(corpus_tokens)
+            self._save_bm25_index()
 
-        logger.info(f"Successfully indexed {len(chunks)} chunks. Total in collection: {self.collection.count()}")
         return len(chunks)
 
     def _save_bm25_index(self):
@@ -118,8 +138,9 @@ class HybridIndexManager:
                     data = pickle.load(f)
                     self.bm25_chunk_ids = data["chunk_ids"]
                     self.chunk_store = data["chunk_store"]
-                    corpus_tokens = [tokenize_for_bm25(self.chunk_store[cid].text) for cid in self.bm25_chunk_ids]
-                    self.bm25 = BM25Okapi(corpus_tokens)
-                logger.info(f"Loaded existing BM25 index with {len(self.bm25_chunk_ids)} chunks.")
+                    valid_ids = [cid for cid in self.bm25_chunk_ids if cid in self.chunk_store]
+                    corpus_tokens = [tokenize_for_bm25(self.chunk_store[cid].text) for cid in valid_ids]
+                    if corpus_tokens:
+                        self.bm25 = BM25Okapi(corpus_tokens)
             except Exception as e:
                 logger.warning(f"Failed to load BM25 index: {e}")

@@ -2,13 +2,15 @@
 
 Features:
 - Document upload (.pdf / .txt) & built-in sample contracts
-- Risk Score Badge & Missing Protections Detection
+- Live Document Structure & Chunking Inspector
+- Risk Score Meter & Missing Protections Detection
 - Itemized Risk Findings with exact verbatim citations
-- Grounded Clause-level Q&A with Cross-Encoder Reranking
+- Dynamic Grounded Clause-level Q&A with Cross-Encoder Reranking
 - Live Benchmark Metrics
 """
 import sys
 import json
+import hashlib
 from pathlib import Path
 
 # Ensure project root is in sys.path so 'src' can be imported when run from any directory
@@ -147,12 +149,23 @@ Neither party may assign or transfer any of its rights or obligations hereunder 
 
 6. TERMINATION FOR CONVENIENCE
 Either party may terminate this Agreement for convenience upon giving at least sixty (60) days prior written notice to the other party.
+""",
+    "📄 Non-Disclosure Agreement (Mutual NDA)": """MUTUAL NON-DISCLOSURE AGREEMENT
+
+1. CONFIDENTIALITY OBLIGATIONS
+Each party agrees to hold all Proprietary Information in strict confidence for a period of three (3) years from the date of disclosure.
+
+2. GOVERNING LAW
+This NDA shall be governed by the laws of the State of New York.
+
+3. RETURN OF MATERIALS
+Upon written request, the receiving party shall promptly return or certify the destruction of all Confidential Information.
 """
 }
 
 # Sidebar
 st.sidebar.title("⚖️ Contract Risk Analyzer")
-st.sidebar.caption("Legal-Tech RAG + Supervised CUAD Classifier")
+st.sidebar.caption("Legal-Tech Hybrid RAG + Supervised CUAD Classifier")
 
 source_choice = st.sidebar.radio(
     "Choose Contract Input:",
@@ -161,11 +174,13 @@ source_choice = st.sidebar.radio(
 
 contract_text = ""
 contract_id = "contract_demo"
+contract_source_name = ""
 
 if source_choice == "Select Preloaded Sample":
     sample_key = st.sidebar.selectbox("Select Sample Contract:", list(SAMPLE_CONTRACTS.keys()))
     contract_text = SAMPLE_CONTRACTS[sample_key]
-    contract_id = sample_key.split()[1].lower()
+    contract_source_name = sample_key
+    contract_id = f"sample_{hashlib.md5(sample_key.encode()).hexdigest()[:8]}"
 elif source_choice == "Upload Document (PDF / TXT)":
     uploaded_file = st.sidebar.file_uploader("Upload Contract PDF/TXT", type=["pdf", "txt"])
     if uploaded_file:
@@ -173,11 +188,14 @@ elif source_choice == "Upload Document (PDF / TXT)":
         temp_path.parent.mkdir(parents=True, exist_ok=True)
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        contract_text, _ = ingestion.load_document(temp_path)
-        contract_id = uploaded_file.name.replace(".", "_")
+        contract_text, page_maps = ingestion.load_document(temp_path)
+        contract_source_name = uploaded_file.name
+        contract_id = f"upload_{hashlib.md5(uploaded_file.name.encode()).hexdigest()[:8]}"
         st.sidebar.success(f"Loaded: {uploaded_file.name}")
 else:
     contract_text = st.sidebar.text_area("Paste contract text here:", height=300)
+    contract_source_name = "Pasted Text Contract"
+    contract_id = f"pasted_{hashlib.md5(contract_text.encode()).hexdigest()[:8]}"
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Pipeline Stack")
@@ -185,7 +203,7 @@ st.sidebar.markdown("""
 - **Embedder**: `BAAI/bge-small-en-v1.5`
 - **Vector DB**: ChromaDB + BM25 Sparse
 - **Reranker**: `ms-marco-MiniLM-L-6-v2`
-- **Classifier**: Logistic Regression (CUAD 15-class)
+- **Classifier**: Supervised Logistic Regression (15 CUAD classes)
 - **Evaluation**: Recall@k, MRR, Faithfulness
 """)
 
@@ -197,9 +215,17 @@ if not contract_text.strip():
     st.info("👈 Please select a sample contract, upload a file, or paste contract text in the sidebar to begin analysis.")
     st.stop()
 
-# Index contract chunks
+# Chunk contract & index in isolated active session
 chunks = ingestion.chunk_contract(contract_text, contract_id=contract_id)
-index_manager.index_chunks(chunks)
+index_manager.index_chunks(chunks, contract_id=contract_id)
+
+# Document Overview Badge
+with st.expander(f"📑 Document Info: **{contract_source_name}** ({len(chunks)} extracted clause chunks)", expanded=False):
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Total Characters", f"{len(contract_text):,}")
+    col_b.metric("Total Words", f"{len(contract_text.split()):,}")
+    col_c.metric("Clause Chunks", len(chunks))
+    st.text_area("Raw Text Preview (First 500 characters):", value=contract_text[:500] + "...", height=100, disabled=True)
 
 # Tabs
 tab1, tab2, tab3 = st.tabs(["🚨 Risk Analysis & Findings", "🔍 Grounded Clause Q&A", "📊 Benchmark & Evaluation"])
@@ -225,7 +251,7 @@ with tab1:
     with col3:
         st.metric("Clauses Analyzed", report.total_clauses_analyzed)
     with col4:
-        st.metric("Missing Protections", len(report.missing_protective_clauses))
+        st.metric("Identified Risk Flags", len(report.findings))
 
     st.markdown("---")
     
@@ -236,20 +262,20 @@ with tab1:
         if report.detected_categories:
             st.write(", ".join([f"`{c}`" for c in report.detected_categories]))
         else:
-            st.write("No standard clause categories detected.")
+            st.info("No standard CUAD clause categories detected in this snippet.")
     with c2:
         st.markdown("#### ⚠️ Missing Protective Clauses")
         if report.missing_protective_clauses:
             for m in report.missing_protective_clauses:
                 st.warning(f"Missing: **{m}**")
         else:
-            st.success("All standard protective clauses are present.")
+            st.success("All standard protective clauses are present or contract is focused.")
 
     st.markdown("---")
-    st.markdown("### 📋 Itemized Risk Findings")
+    st.markdown(f"### 📋 Itemized Risk Findings ({len(report.findings)})")
 
     if not report.findings:
-        st.success("🎉 No significant risk flags detected in this contract.")
+        st.success("🎉 No significant risk flags detected in this contract. It appears standard and balanced.")
     else:
         for idx, finding in enumerate(report.findings):
             badge = finding.severity.value
@@ -261,21 +287,22 @@ with tab1:
                 st.markdown(f"**💡 Recommendation**: {finding.recommendation}")
                 
                 if finding.citation_text:
-                    st.markdown("**Exact Verbatim Citation (Ground Truth)**:")
+                    st.markdown("**Exact Verbatim Citation (Ground Truth in Document)**:")
                     st.markdown(f'<div class="citation-box">{finding.citation_text}</div>', unsafe_allow_html=True)
-                    st.caption(f"Offsets: chars [{finding.start_char} : {finding.end_char}] | Chunk ID: `{finding.chunk_id}`")
+                    st.caption(f"Span Offsets: [{finding.start_char} : {finding.end_char}] | Chunk ID: `{finding.chunk_id}`")
 
 # TAB 2: Grounded Q&A
 with tab2:
     st.markdown("### 🔍 Query Specific Contract Clauses")
-    st.caption("Combines ChromaDB Dense Vector Search + BM25 Keyword Search + Cross-Encoder Reranker.")
+    st.caption("Searches the active document using Hybrid (ChromaDB + BM25) search with Cross-Encoder Reranking.")
 
     preset_queries = [
         "What are the liability limits or caps?",
         "Are there any non-compete or non-solicitation restrictions?",
         "What are the terms for termination for convenience?",
         "What is the governing law and jurisdiction?",
-        "Are there any liquidated damages or penalties?"
+        "Are there any liquidated damages or penalties?",
+        "What are the confidentiality obligations?"
     ]
 
     selected_query = st.selectbox("Quick Query Prompts:", [""] + preset_queries)
@@ -284,7 +311,7 @@ with tab2:
     use_reranker = st.checkbox("Enable Cross-Encoder Reranker (`ms-marco-MiniLM-L-6-v2`)", value=True)
 
     if user_query.strip():
-        with st.spinner("Searching and reranking clauses..."):
+        with st.spinner(f"Searching and reranking '{user_query}' in active contract..."):
             retrieved = retriever.retrieve(
                 query=user_query,
                 contract_id=contract_id,
@@ -296,27 +323,30 @@ with tab2:
         st.markdown("#### 🤖 Grounded Answer")
         st.info(grounded_res.answer)
 
-        st.markdown("#### 📌 Verbatim Citations & Evidence")
+        st.markdown("#### 📌 Verbatim Citations & Evidence from Document")
         if grounded_res.citations:
             for cit in grounded_res.citations:
                 st.markdown(f"**{cit['citation_id']}** (Page {cit['page_number']}, {cit['section_title']}):")
                 st.markdown(f'<div class="citation-box">{cit["quote"]}</div>', unsafe_allow_html=True)
                 st.caption(f"Span: [{cit['start_char']} : {cit['end_char']}] | Chunk: `{cit['chunk_id']}`")
         else:
-            st.write("No direct citations found.")
+            st.write("No matching citations found.")
 
         with st.expander("🔬 View Detailed Retrieval & Reranker Scores"):
-            ret_df = pd.DataFrame([
-                {
-                    "Chunk ID": c.chunk_id,
-                    "Rerank Score": f"{c.rerank_score:.4f}" if c.rerank_score is not None else "N/A",
-                    "Dense Rank": c.dense_rank,
-                    "BM25 Rank": c.sparse_rank,
-                    "Snippet": c.text[:120] + "..."
-                }
-                for c in retrieved
-            ])
-            st.dataframe(ret_df, use_container_width=True)
+            if retrieved:
+                ret_df = pd.DataFrame([
+                    {
+                        "Chunk ID": c.chunk_id,
+                        "Rerank Score": f"{c.rerank_score:.4f}" if c.rerank_score is not None else "N/A",
+                        "Dense Rank": c.dense_rank,
+                        "BM25 Rank": c.sparse_rank,
+                        "Snippet": c.text[:140] + "..."
+                    }
+                    for c in retrieved
+                ])
+                st.dataframe(ret_df, use_container_width=True)
+            else:
+                st.write("No chunks retrieved.")
 
 # TAB 3: Benchmarks
 with tab3:

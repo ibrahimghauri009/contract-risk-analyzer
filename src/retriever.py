@@ -3,13 +3,14 @@
 Implements:
 1. Dense Semantic Search (ChromaDB)
 2. Sparse Keyword Search (BM25)
-3. Reciprocal Rank Fusion (RRF)
-4. Cross-Encoder Reranker for state-of-the-art precision
+3. Active Contract Isolation & Reciprocal Rank Fusion (RRF)
+4. Cross-Encoder Reranker for pinpoint precision
 """
 import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 import numpy as np
+from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 from src.config import settings
 from src.ingest import ContractChunk
@@ -62,42 +63,45 @@ class HybridRetriever:
     ) -> List[RetrievedClause]:
         """
         Executes hybrid retrieval:
-        1. Query dense index (ChromaDB)
+        1. Query dense index (ChromaDB or active contract chunks)
         2. Query sparse index (BM25)
         3. Fuse using Reciprocal Rank Fusion (RRF)
         4. Rerank top candidates with Cross-Encoder
         """
-        # --- 1. Dense Retrieval ---
-        query_embedding = self.index_manager.embedder.encode([query], normalize_embeddings=True).tolist()
+        target_contract_id = contract_id or self.index_manager.active_contract_id
         
-        where_clause = {"contract_id": contract_id} if contract_id else None
+        # If we have an active contract loaded with chunks, we can search directly within it
+        active_chunks = [
+            c for c in (self.index_manager.active_chunks or self.index_manager.chunk_store.values())
+            if not target_contract_id or c.contract_id == target_contract_id
+        ]
+
+        if not active_chunks and self.index_manager.chunk_store:
+            active_chunks = list(self.index_manager.chunk_store.values())
+
+        if not active_chunks:
+            return []
+
+        # --- 1. Dense Semantic Scoring ---
+        query_embedding = self.index_manager.embedder.encode([query], normalize_embeddings=True)
+        chunk_texts = [c.text for c in active_chunks]
+        chunk_embeddings = self.index_manager.embedder.encode(chunk_texts, normalize_embeddings=True)
         
-        dense_results = self.index_manager.collection.query(
-            query_embeddings=query_embedding,
-            n_results=min(candidate_pool_size, max(1, self.index_manager.collection.count())),
-            where=where_clause
-        )
+        # Cosine similarities (since embeddings are normalized, dot product = cosine sim)
+        dense_sims = np.dot(chunk_embeddings, query_embedding.T).flatten()
+        dense_sorted_indices = np.argsort(dense_sims)[::-1]
+        dense_ranked_ids = [active_chunks[i].chunk_id for i in dense_sorted_indices[:candidate_pool_size]]
 
-        dense_ranked_ids = []
-        if dense_results and "ids" in dense_results and dense_results["ids"]:
-            dense_ranked_ids = dense_results["ids"][0]
-
-        # --- 2. Sparse (BM25) Retrieval ---
+        # --- 2. Sparse (BM25) Scoring ---
+        query_tokens = tokenize_for_bm25(query)
+        corpus_tokens = [tokenize_for_bm25(c.text) for c in active_chunks]
+        
         sparse_ranked_ids = []
-        if self.index_manager.bm25 and self.index_manager.bm25_chunk_ids:
-            query_tokens = tokenize_for_bm25(query)
-            bm25_scores = self.index_manager.bm25.get_scores(query_tokens)
-            
-            # Filter by contract_id if specified
-            valid_indices = []
-            for idx, cid in enumerate(self.index_manager.bm25_chunk_ids):
-                chunk = self.index_manager.chunk_store.get(cid)
-                if not contract_id or (chunk and chunk.contract_id == contract_id):
-                    valid_indices.append(idx)
-
-            if valid_indices:
-                sorted_valid = sorted(valid_indices, key=lambda i: bm25_scores[i], reverse=True)
-                sparse_ranked_ids = [self.index_manager.bm25_chunk_ids[i] for i in sorted_valid[:candidate_pool_size]]
+        if corpus_tokens:
+            contract_bm25 = BM25Okapi(corpus_tokens)
+            bm25_scores = contract_bm25.get_scores(query_tokens)
+            sparse_sorted_indices = np.argsort(bm25_scores)[::-1]
+            sparse_ranked_ids = [active_chunks[i].chunk_id for i in sparse_sorted_indices[:candidate_pool_size]]
 
         # --- 3. Reciprocal Rank Fusion (RRF) ---
         rrf_scores: Dict[str, float] = {}
@@ -112,15 +116,19 @@ class HybridRetriever:
             sparse_ranks[cid] = rank + 1
             rrf_scores[cid] = rrf_scores.get(cid, 0.0) + sparse_weight * (1.0 / (rrf_k + rank + 1))
 
-        if not rrf_scores:
-            return []
-
         # Sort candidate pool by RRF score
         sorted_candidates = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:candidate_pool_size]
         
         candidates: List[RetrievedClause] = []
         for cid, score in sorted_candidates:
             chunk = self.index_manager.chunk_store.get(cid)
+            if not chunk:
+                # search in active_chunks
+                for ac in active_chunks:
+                    if ac.chunk_id == cid:
+                        chunk = ac
+                        break
+
             if chunk:
                 candidates.append(RetrievedClause(
                     chunk_id=chunk.chunk_id,
@@ -145,6 +153,6 @@ class HybridRetriever:
                 c.rerank_score = float(r_score)
                 
             # Sort by reranker score descending
-            candidates = sorted(candidates, key=lambda x: x.rerank_score or -999.0, reverse=True)
+            candidates = sorted(candidates, key=lambda x: x.rerank_score if x.rerank_score is not None else -999.0, reverse=True)
 
         return candidates[:top_k]
