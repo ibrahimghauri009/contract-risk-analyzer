@@ -1,0 +1,21 @@
+MASTER SERVICES & ADVISORY AGREEMENT
+
+This Master Services Agreement is entered into by and between Alpha Global Corp ("Client") and Apex Technical Services LLC ("Provider").
+
+1. SCOPE OF SERVICES
+Provider shall provide enterprise AI and software consulting services as requested by Client.
+
+2. UNLIMITED AND UNCAPPED LIABILITY
+NEITHER PARTY SHALL BE SUBJECT TO ANY MONETARY LIMITATION OF LIABILITY. PROVIDER ACCEPTS UNLIMITED FINANCIAL LIABILITY FOR ALL DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, AND PUNITIVE DAMAGES ARISING UNDER OR IN CONNECTION WITH THIS AGREEMENT.
+
+3. GLOBAL NON-COMPETE COVENANT
+During the term of this Agreement and for a period of five (5) years following the termination or expiration thereof, Provider and its affiliates shall not anywhere in the world engage directly or indirectly in any business that develops software or risk analysis solutions competing with Client.
+
+4. EXCLUSIVITY OBLIGATION
+Client shall be the exclusive commercial partner of Provider for all contract analysis and risk tooling. Provider is strictly prohibited from offering similar advisory services to any third-party competitor.
+
+5. UNILATERAL TERMINATION FOR CONVENIENCE
+Client may terminate this Agreement immediately without prior notice and without cause at any time upon oral or written notice.
+
+6. LIQUIDATED DAMAGES
+In the event of any project delivery delay exceeding 24 hours, Provider shall immediately pay liquidated damages of $25,000 per day of delay without requiring proof of actual loss.

@@ -2,6 +2,7 @@
 
 > **Legal-Tech RAG + Supervised ML Clause Classifier with Exact Span Grounding & Rigorous Evaluation**
 
+[![CI Test Suite](https://github.com/ibrahimghauri009/contract-risk-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/ibrahimghauri009/contract-risk-analyzer/actions)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00.svg)](https://www.trychroma.com)

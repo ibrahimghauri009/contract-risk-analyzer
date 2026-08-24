@@ -1,0 +1,21 @@
+STANDARD ENTERPRISE SAAS SUBSCRIPTION AGREEMENT
+
+This Agreement is made between CloudSafe Technologies Inc. ("Provider") and Enterprise Solutions Corp ("Customer").
+
+1. SUBSCRIPTION GRANT
+Provider grants Customer a non-exclusive, non-transferable right to access and use the hosted software services during the subscription term.
+
+2. LIMITATION OF LIABILITY
+IN NO EVENT SHALL EITHER PARTY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES. EACH PARTY'S MAXIMUM AGGREGATE LIABILITY UNDER THIS AGREEMENT SHALL BE STRICTLY CAPPED AT THE TOTAL FEES PAID BY CUSTOMER IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM.
+
+3. GOVERNING LAW AND DISPUTE RESOLUTION
+This Agreement shall be governed by, and construed in accordance with, the laws of the State of Delaware, USA, without regard to its conflict of law principles.
+
+4. INSURANCE OBLIGATIONS
+Provider shall maintain commercial general liability insurance with coverage limits of not less than $2,000,000 per occurrence.
+
+5. ANTI-ASSIGNMENT
+Neither party may assign or transfer its rights or obligations hereunder without the prior written consent of the other party.
+
+6. TERMINATION FOR CONVENIENCE
+Either party may terminate this Agreement for convenience upon providing at least sixty (60) days prior written notice.
