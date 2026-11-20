@@ -6,7 +6,6 @@ def test_imports():
     import sentence_transformers
     import chromadb
     import sklearn
-    import xgboost
     import fastapi
     import streamlit
     import rank_bm25

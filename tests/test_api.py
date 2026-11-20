@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from api.main import app
+from tests.conftest import requires_model
 
 client = TestClient(app)
 
@@ -19,6 +20,7 @@ def test_health_endpoint():
     assert data["status"] == "healthy"
     assert "embedding_model" in data
 
+@requires_model
 def test_analyze_endpoint():
     payload = {
         "contract_text": SAMPLE_TEXT,
