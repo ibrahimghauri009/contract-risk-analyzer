@@ -4,7 +4,6 @@ sentence-transformers>=3.0.0
 transformers>=4.40.0
 datasets>=2.19.0
 scikit-learn>=1.4.0
-xgboost>=2.0.0
 numpy>=1.26.0
 pandas>=2.2.0
 

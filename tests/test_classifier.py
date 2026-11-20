@@ -1,6 +1,9 @@
 """Test suite for Supervised Clause Classifier."""
 import pytest
 from src.classifier import ClauseClassifier
+from tests.conftest import requires_model
+
+pytestmark = requires_model
 
 @pytest.fixture(scope="module")
 def classifier():

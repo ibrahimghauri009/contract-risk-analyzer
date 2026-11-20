@@ -5,6 +5,9 @@ from src.classifier import ClauseClassifier
 from src.risk_engine import RiskEngine, RiskSeverity
 from src.retriever import RetrievedClause
 from src.generator import GroundedGenerator
+from tests.conftest import requires_model
+
+pytestmark = requires_model
 
 RISKY_CONTRACT_TEXT = """
 MASTER CONSULTING AGREEMENT

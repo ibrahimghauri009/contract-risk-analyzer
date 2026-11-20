@@ -1,4 +1,4 @@
-# Build stage
+# Single-stage image for the FastAPI service
 FROM python:3.11-slim
 
 # Set environment variables
